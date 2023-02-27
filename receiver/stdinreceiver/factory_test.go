@@ -16,8 +16,9 @@ package stdinreceiver
 
 import (
 	"context"
-	"go.opentelemetry.io/collector/receiver/receivertest"
 	"testing"
+
+	"go.opentelemetry.io/collector/receiver/receivertest"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/consumertest"
@@ -27,15 +28,7 @@ func TestCreateReceiver(t *testing.T) {
 	cfg := createDefaultConfig().(*Config)
 
 	mockLogsConsumer := consumertest.NewNop()
-	lReceiver, err := createLogsReceiver(context.Background(), receivertest.NewNopCreateSettings(), cfg, mockLogsConsumer)
+	lReceiver, err := newLogsReceiver(context.Background(), receivertest.NewNopCreateSettings(), cfg, mockLogsConsumer)
 	assert.Nil(t, err, "receiver creation failed")
 	assert.NotNil(t, lReceiver, "receiver creation failed")
-}
-
-func TestCreateNilNextConsumerLogs(t *testing.T) {
-	cfg := createDefaultConfig().(*Config)
-
-	mReceiver, err := createLogsReceiver(context.Background(), receivertest.NewNopCreateSettings(), cfg, nil)
-	assert.EqualError(t, err, "nil logsConsumer")
-	assert.Nil(t, mReceiver, "receiver creation failed")
 }

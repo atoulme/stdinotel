@@ -16,6 +16,9 @@ package stdinreceiver
 
 import (
 	"context"
+	"go.opentelemetry.io/collector/component/componenttest"
+	"go.opentelemetry.io/collector/obsreport"
+	"go.opentelemetry.io/collector/receiver/receivertest"
 	"os"
 	"testing"
 	"time"
@@ -35,27 +38,27 @@ func TestConsumeLine(t *testing.T) {
 	assert.Equal(t, "foo", log)
 }
 
-func TestReceiveLinesTwoReceivers(t *testing.T) {
+func TestReceiveLines(t *testing.T) {
 	read, write, err := os.Pipe()
 	assert.NoError(t, err)
 	stdin = read
 	sink := new(consumertest.LogsSink)
 	config := createDefaultConfig()
-	r := stdinReceiver{logsConsumer: sink, config: config.(*Config)}
-	sink2 := new(consumertest.LogsSink)
-	config2 := createDefaultConfig()
-	r2 := stdinReceiver{logsConsumer: sink2, config: config2.(*Config)}
-	err = r.Start(context.Background(), nil)
-	assert.NoError(t, err)
-	err = r2.Start(context.Background(), nil)
+	settings := receivertest.NewNopCreateSettings()
+	receiverSettings := obsreport.ReceiverSettings{
+		ReceiverID:             settings.ID,
+		Transport:              "",
+		ReceiverCreateSettings: settings,
+	}
+	obsrecv, _ := obsreport.NewReceiver(receiverSettings)
+	r := stdinReceiver{logsConsumer: sink, config: config.(*Config), obsrecv: obsrecv}
+	err = r.Start(context.Background(), componenttest.NewNopHost())
 	assert.NoError(t, err)
 	write.WriteString("foo\nbar\nfoobar\n")
 	write.WriteString("foo\r\nbar\nfoobar\n")
 	time.Sleep(time.Second * 1)
 	lds := sink.AllLogs()
 	assert.Equal(t, 6, len(lds))
-	lds2 := sink2.AllLogs()
-	assert.Equal(t, 6, len(lds2))
 
 	read.Chmod(000)
 	write.WriteString("foo\nbar\nfoobar\n")
@@ -63,7 +66,5 @@ func TestReceiveLinesTwoReceivers(t *testing.T) {
 	write.Close() // close stdin early.
 
 	err = r.Shutdown(context.Background())
-	assert.NoError(t, err)
-	err = r2.Shutdown(context.Background())
 	assert.NoError(t, err)
 }

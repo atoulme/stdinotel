@@ -19,25 +19,21 @@ import (
 	"context"
 	"errors"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/obsreport"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
+	"go.uber.org/multierr"
 	"os"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.uber.org/zap"
 )
 
-const (
-	transport = "stdin"
-	format    = "string"
-)
-
 var (
-	errNilNextLogsConsumer = errors.New("nil logsConsumer")
-	listenerEnabled        = sync.Once{}
-	listeners              []chan string
-	stdin                  = os.Stdin
+	stdin = os.Stdin
 )
 
 // stdinReceiver implements the component.MetricsReceiver for stdin metric protocol.
@@ -45,69 +41,75 @@ type stdinReceiver struct {
 	logger       *zap.Logger
 	config       *Config
 	logsConsumer consumer.Logs
-	shutdown     chan struct{}
+	obsrecv      *obsreport.Receiver
+	wg           sync.WaitGroup
 }
 
-// NewLogsReceiver creates the stdin receiver with the given configuration.
-func NewLogsReceiver(
-	logger *zap.Logger,
-	config Config,
+// newLogsReceiver creates the stdin receiver with the given configuration.
+func newLogsReceiver(
+	ctx context.Context,
+	settings receiver.CreateSettings,
+	config component.Config,
 	nextConsumer consumer.Logs,
 ) (receiver.Logs, error) {
-	if nextConsumer == nil {
-		return nil, errNilNextLogsConsumer
+
+	cfg, ok := config.(*Config)
+	if !ok {
+		return nil, errors.New("invalid config")
+	}
+
+	obsrecv, err := obsreport.NewReceiver(obsreport.ReceiverSettings{
+		ReceiverID:             settings.ID,
+		Transport:              "",
+		ReceiverCreateSettings: settings,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	r := &stdinReceiver{
-		logger:       logger,
-		config:       &config,
+		logger:       settings.Logger,
+		config:       cfg,
 		logsConsumer: nextConsumer,
+		obsrecv:      obsrecv,
 	}
 
 	return r, nil
 }
 
-func startStdinListener(logger *zap.Logger) {
-	listenerEnabled.Do(func() {
-		reader := bufio.NewReader(stdin)
-		for {
-			scanner := bufio.NewScanner(reader)
-			scanner.Split(bufio.ScanLines) // Set up the split function.
-			for scanner.Scan() {
-				line := scanner.Text()
-				for _, listener := range listeners {
-					listener <- line
-				}
-			}
-			if err := scanner.Err(); err != nil {
-				logger.Error("Error reading stdin", zap.Error(err))
-			}
+func (r *stdinReceiver) startStdinListener(ctx context.Context, logger *zap.Logger, host component.Host) {
+	r.obsrecv.StartLogsOp(ctx)
+	var errs []error
+	i := 0
+	reader := bufio.NewReader(stdin)
+	scanner := bufio.NewScanner(reader)
+	scanner.Split(bufio.ScanLines) // Set up the split function.
+	for scanner.Scan() {
+		line := scanner.Text()
+		err := r.consumeLine(ctx, line)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			i++
 		}
-	})
+	}
+	if err := scanner.Err(); err != nil {
+		logger.Error("Error reading stdin", zap.Error(err))
+	}
+	combined := multierr.Combine(errs...)
+	r.obsrecv.EndLogsOp(ctx, "", i, combined)
+	if len(errs) != 0 {
+		host.ReportFatalError(combined)
+	} else {
+		r.config.StdinClosedHook()
+	}
+	r.wg.Done()
 }
 
-// Start starts the stdin receiver, adding it to the stdin listener.
+// Start starts the stdin receiver.
 func (r *stdinReceiver) Start(ctx context.Context, host component.Host) error {
-	r.shutdown = make(chan struct{})
-
-	listener := make(chan string)
-	listeners = append(listeners, listener)
-
-	go func() {
-		go startStdinListener(r.logger)
-		for {
-			select {
-			case nextLine := <-listener:
-				err := r.consumeLine(ctx, nextLine)
-				if err != nil {
-					r.logger.Error("error with log", zap.Error(err))
-				}
-			case <-r.shutdown:
-				return
-			}
-		}
-	}()
-
+	r.wg.Add(1)
+	go r.startStdinListener(ctx, r.logger, host)
 	return nil
 }
 
@@ -115,14 +117,15 @@ func (r *stdinReceiver) consumeLine(ctx context.Context, line string) error {
 	ld := plog.NewLogs()
 	rl := ld.ResourceLogs().AppendEmpty()
 	sl := rl.ScopeLogs().AppendEmpty()
-	sl.LogRecords().AppendEmpty().Body().SetStr(line)
+	lr := sl.LogRecords().AppendEmpty()
+	lr.Body().SetStr(line)
+	lr.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
 	err := r.logsConsumer.ConsumeLogs(ctx, ld)
 	return err
 }
 
-// Shutdown shuts down the stdin receiver, closing its listener to the stdin loop.
+// Shutdown shuts down the stdin receiver.
 func (r *stdinReceiver) Shutdown(context.Context) error {
-	close(r.shutdown)
-
+	r.wg.Wait()
 	return nil
 }

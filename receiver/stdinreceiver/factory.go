@@ -15,9 +15,6 @@
 package stdinreceiver
 
 import (
-	"context"
-	"go.opentelemetry.io/collector/consumer"
-
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/receiver"
 )
@@ -31,6 +28,7 @@ const (
 )
 
 type Config struct {
+	StdinClosedHook func()
 }
 
 // NewFactory creates a factory for stdin receiver.
@@ -38,23 +36,10 @@ func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
 		typeStr,
 		createDefaultConfig,
-		receiver.WithLogs(createLogsReceiver, stabilityLevel))
+		receiver.WithLogs(newLogsReceiver, stabilityLevel))
 }
 
 // CreateDefaultConfig creates the default configuration for stdin receiver.
 func createDefaultConfig() component.Config {
 	return &Config{}
-}
-
-// createLogsReceiver creates a logs receiver based on provided config.
-func createLogsReceiver(
-	_ context.Context,
-	params receiver.CreateSettings,
-	cfg component.Config,
-	consumer consumer.Logs,
-) (receiver.Logs, error) {
-
-	rCfg := cfg.(*Config)
-
-	return NewLogsReceiver(params.Logger, *rCfg, consumer)
 }
