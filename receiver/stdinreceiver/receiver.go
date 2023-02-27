@@ -18,17 +18,17 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"os"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/obsreport"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/multierr"
-	"os"
-	"sync"
-	"time"
-
-	"go.opentelemetry.io/collector/component"
 	"go.uber.org/zap"
 )
 
@@ -47,7 +47,7 @@ type stdinReceiver struct {
 
 // newLogsReceiver creates the stdin receiver with the given configuration.
 func newLogsReceiver(
-	ctx context.Context,
+	_ context.Context,
 	settings receiver.CreateSettings,
 	config component.Config,
 	nextConsumer consumer.Logs,
@@ -94,16 +94,19 @@ func (r *stdinReceiver) startStdinListener(ctx context.Context, logger *zap.Logg
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		logger.Error("Error reading stdin", zap.Error(err))
+		errs = append(errs, err)
 	}
 	combined := multierr.Combine(errs...)
 	r.obsrecv.EndLogsOp(ctx, "", i, combined)
+
+	r.wg.Done()
 	if len(errs) != 0 {
 		host.ReportFatalError(combined)
 	} else {
-		r.config.StdinClosedHook()
+		if r.config.StdinClosedHook != nil {
+			r.config.StdinClosedHook()
+		}
 	}
-	r.wg.Done()
 }
 
 // Start starts the stdin receiver.

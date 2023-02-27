@@ -82,11 +82,13 @@ func createExporterConfig(factories otelcol.Factories) (component.Config, compon
 		splunkCfg.TLSSetting.InsecureSkipVerify = os.Getenv("STDINOTEL_TLS_INSECURE_SKIP_VERIFY") == "true"
 
 	}
-	if splunkCfg, ok := cfg.(*otlpexporter.Config); ok {
-		splunkCfg.Endpoint = os.Getenv("STDINOTEL_ENDPOINT")
+	if otlpCfg, ok := cfg.(*otlpexporter.Config); ok {
+		otlpCfg.Endpoint = os.Getenv("STDINOTEL_ENDPOINT")
+		otlpCfg.TLSSetting.InsecureSkipVerify = os.Getenv("STDINOTEL_TLS_INSECURE_SKIP_VERIFY") == "true"
 	}
-	if splunkCfg, ok := cfg.(*otlphttpexporter.Config); ok {
-		splunkCfg.Endpoint = os.Getenv("STDINOTEL_ENDPOINT")
+	if otlphttpCfg, ok := cfg.(*otlphttpexporter.Config); ok {
+		otlphttpCfg.Endpoint = os.Getenv("STDINOTEL_ENDPOINT")
+		otlphttpCfg.TLSSetting.InsecureSkipVerify = os.Getenv("STDINOTEL_TLS_INSECURE_SKIP_VERIFY") == "true"
 	}
 
 	return cfg, protocol

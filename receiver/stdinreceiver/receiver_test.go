@@ -16,15 +16,15 @@ package stdinreceiver
 
 import (
 	"context"
-	"go.opentelemetry.io/collector/component/componenttest"
-	"go.opentelemetry.io/collector/obsreport"
-	"go.opentelemetry.io/collector/receiver/receivertest"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/obsreport"
+	"go.opentelemetry.io/collector/receiver/receivertest"
 )
 
 func TestConsumeLine(t *testing.T) {

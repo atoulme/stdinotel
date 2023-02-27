@@ -18,10 +18,9 @@ import (
 	"context"
 	"testing"
 
-	"go.opentelemetry.io/collector/receiver/receivertest"
-
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/consumertest"
+	"go.opentelemetry.io/collector/receiver/receivertest"
 )
 
 func TestCreateReceiver(t *testing.T) {
